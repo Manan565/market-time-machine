@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from datetime import date, timedelta
 from pathlib import Path
 
 from mtm import store
+from mtm.engines import ENGINES, assert_results_equal
 from mtm.ingest import binance, quality
 from mtm.ingest.synthetic import generate_range
+from mtm.queries import QUERIES
 
 
 def _parse_day(text: str) -> date:
@@ -48,6 +51,35 @@ def cmd_ingest_binance(args: argparse.Namespace) -> None:
     (out / "quality_report.json").write_text(json.dumps(reports, indent=2))
 
 
+def cmd_demo(args: argparse.Namespace) -> None:
+    """Run every query on every engine once, check they agree, and print rough timings.
+
+    This is a smoke test, not the benchmark: one run, no warm-up. The real harness comes in week 2.
+    """
+    dataset = store.DatasetRef(Path(args.root))
+    rows = dataset.row_count(args.symbol)
+    print(f"{args.symbol}: {rows:,} rows across {len(dataset.days(args.symbol))} days\n")
+    engines = {}
+    for name, cls in ENGINES.items():
+        engine = cls()
+        t0 = time.perf_counter()
+        engine.load(dataset, [args.symbol])
+        engines[name] = engine
+        print(f"{name:>7} load  {time.perf_counter() - t0:8.3f}s")
+    print()
+    for qid, query in QUERIES.items():
+        results, timings = {}, {}
+        for name, engine in engines.items():
+            t0 = time.perf_counter()
+            results[name] = engine.run(qid, {"symbol": args.symbol})
+            timings[name] = time.perf_counter() - t0
+        names = list(results)
+        for other in names[1:]:
+            assert_results_equal(results[names[0]], results[other])
+        cells = "  ".join(f"{n} {timings[n] * 1000:8.1f}ms" for n in names)
+        print(f"{qid} {query.title:<36} rows={len(results[names[0]]):>6,}  {cells}  agree=yes")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="mtm")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -69,6 +101,11 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--out", default="data/parquet")
     b.add_argument("--no-verify", action="store_true", help="skip checksum verification")
     b.set_defaults(func=cmd_ingest_binance)
+
+    d = sub.add_parser("demo", help="run Q1-Q3 on every engine, verify agreement, print timings")
+    d.add_argument("--root", default="data/parquet")
+    d.add_argument("--symbol", default="BTCUSDT")
+    d.set_defaults(func=cmd_demo)
     return parser
 
 

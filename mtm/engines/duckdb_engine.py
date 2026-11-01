@@ -1,0 +1,70 @@
+"""DuckDB engine: columnar SQL that scans the Parquet files directly."""
+
+from __future__ import annotations
+
+import duckdb
+import pandas as pd
+
+from mtm.engines.base import finalize
+from mtm.queries import resolve
+from mtm.store import DatasetRef
+
+EPOCH = "TIMESTAMP '1970-01-01'"  # pandas floors to the Unix epoch, so DuckDB must too
+
+
+class DuckDBEngine:
+    name = "duckdb"
+
+    def __init__(self) -> None:
+        self._con = duckdb.connect(":memory:")
+        self._views: dict[str, str] = {}
+
+    def load(self, dataset: DatasetRef, symbols: list[str] | None = None) -> None:
+        """Register one view per symbol over its Parquet files. No data is read yet."""
+        self._views = {}
+        for symbol in symbols or dataset.symbols():
+            files = [str(p) for p in dataset.files(symbol)]
+            if not symbol.isalnum():
+                raise ValueError(f"unsafe symbol {symbol!r}")
+            view = f"trades_{symbol.lower()}"
+            # CREATE VIEW cannot be prepared, so the (self-generated) paths are quoted inline.
+            literal = ", ".join("'" + f.replace("'", "''") + "'" for f in files)
+            self._con.execute(
+                f"CREATE OR REPLACE VIEW {view} AS SELECT * FROM read_parquet([{literal}])"
+            )
+            self._views[symbol] = view
+
+    def sql(self, query_id: str, params: dict | None = None) -> str:
+        """The SQL this engine runs for a query (also used by the explain features later)."""
+        p = resolve(query_id, params)
+        view = self._views[p["symbol"]]
+        if query_id == "Q1":
+            return (
+                f"SELECT time_bucket(INTERVAL '{p['bucket_minutes']} minutes', ts, {EPOCH}) AS bucket, "
+                "sum(price * qty) / sum(qty) AS vwap, sum(qty) AS volume, count(*) AS trades "
+                f"FROM {view} GROUP BY 1 ORDER BY 1"
+            )
+        if query_id == "Q2":
+            return self._bars_sql(view)
+        if query_id == "Q3":
+            w = p["window"]
+            return (
+                f"WITH bars AS ({self._bars_sql(view)}), "
+                "r AS (SELECT bucket, ln(close / lag(close) OVER (ORDER BY bucket)) AS r FROM bars), "
+                "w AS (SELECT bucket, count(r) OVER win AS n, sum(r * r) OVER win AS ss FROM r "
+                f"WINDOW win AS (ORDER BY bucket ROWS BETWEEN {w - 1} PRECEDING AND CURRENT ROW)) "
+                f"SELECT bucket, sqrt(ss) AS realized_vol FROM w WHERE n = {w} ORDER BY bucket"
+            )
+        raise NotImplementedError(query_id)
+
+    @staticmethod
+    def _bars_sql(view: str) -> str:
+        return (
+            f"SELECT time_bucket(INTERVAL '1 minute', ts, {EPOCH}) AS bucket, "
+            "first(price ORDER BY ts, trade_id) AS open, max(price) AS high, min(price) AS low, "
+            "last(price ORDER BY ts, trade_id) AS close, sum(qty) AS volume, count(*) AS trades "
+            f"FROM {view} GROUP BY 1 ORDER BY 1"
+        )
+
+    def run(self, query_id: str, params: dict | None = None) -> pd.DataFrame:
+        return finalize(self._con.execute(self.sql(query_id, params)).df(), query_id)

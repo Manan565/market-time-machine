@@ -51,5 +51,13 @@ tests/               # ingest, generator and engine parity tests
 | Q2 | 1-minute OHLC bars |
 | Q3 | Rolling 1-hour realized volatility from 1-minute closes |
 
+### What `make demo` shows today
+
+On 1,000,000 synthetic BTCUSDT ticks every engine agrees on all three queries, and each query takes
+roughly 50 to 120 ms in a single, unwarmed run. **That is a smoke test, not a benchmark**, and at this
+size neither engine is clearly ahead: DuckDB's ordered `first`/`last` in Q2 and its window query in Q3
+were actually slower than pandas in that run. Week 2 adds a proper harness (warm-up, repeated runs,
+median and p95, 1M/10M/100M rows, memory) before any claim is made.
+
 Every engine must return the same answer; `tests/test_parity.py` checks pandas and DuckDB against a
 slow, obviously correct pure-Python reference.
