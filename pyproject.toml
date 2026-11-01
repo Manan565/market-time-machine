@@ -17,6 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "hypothesis>=6", "ruff>=0.5"]
+plot = ["matplotlib>=3.8"]
 
 [tool.setuptools.packages.find]
 include = ["mtm*"]
