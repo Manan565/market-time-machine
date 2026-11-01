@@ -7,6 +7,7 @@ be a bug in plain Python logic rather than in a library's clever optimisation.
 from __future__ import annotations
 
 import math
+from bisect import bisect_right
 from collections import defaultdict
 
 import pandas as pd
@@ -52,7 +53,45 @@ class ReferenceEngine:
             return finalize(self._bars(rows), "Q2")
         if query_id == "Q3":
             return finalize(self._q3(rows, p["window"]), "Q3")
+        if query_id == "Q4":
+            return finalize(self._q4(rows, self._rows[p["other"]]), "Q4")
+        if query_id == "Q5":
+            return finalize(self._q5(rows, p["start"], p["end"], p["n"]), "Q5")
+        if query_id == "Q6":
+            return finalize(self._q6(rows, p["start"], p["end"]), "Q6")
         raise NotImplementedError(query_id)
+
+    @staticmethod
+    def _in_range(rows: list[tuple], start, end) -> list[tuple]:
+        lo = None if start is None else start.value // 1000
+        hi = None if end is None else end.value // 1000
+        return [r for r in rows if (lo is None or r[0] >= lo) and (hi is None or r[0] < hi)]
+
+    def _q4(self, rows: list[tuple], other_rows: list[tuple]) -> pd.DataFrame:
+        # latest other-price per timestamp: rows are in (ts, trade_id) order, so the last wins
+        latest: dict[int, float] = {}
+        for ts, _tid, price, _qty in other_rows:
+            latest[ts] = price
+        other_ts = sorted(latest)
+        groups: dict[int, list[float]] = defaultdict(list)
+        for ts, _tid, price, _qty in rows:
+            i = bisect_right(other_ts, ts) - 1  # latest other trade with ts' <= ts
+            if i >= 0:
+                groups[ts // US_PER_MINUTE * US_PER_MINUTE].append(price / latest[other_ts[i]])
+        out = [
+            (self._to_ts(b), math.fsum(v) / len(v), len(v)) for b, v in sorted(groups.items())
+        ]
+        return pd.DataFrame(out, columns=["bucket", "ratio", "trades"])
+
+    def _q5(self, rows: list[tuple], start, end, n: int) -> pd.DataFrame:
+        picked = sorted(self._in_range(rows, start, end), key=lambda r: (-r[3], r[0], r[1]))[:n]
+        out = [(self._to_ts(ts), tid, price, qty) for ts, tid, price, qty in picked]
+        return pd.DataFrame(out, columns=["bucket", "trade_id", "price", "qty"])
+
+    def _q6(self, rows: list[tuple], start, end) -> pd.DataFrame:
+        picked = self._in_range(rows, start, end)
+        volume = math.fsum(r[3] for r in picked)
+        return pd.DataFrame({"bucket": [start], "trades": [len(picked)], "volume": [volume]})
 
     @staticmethod
     def _to_ts(bucket_us: int) -> pd.Timestamp:

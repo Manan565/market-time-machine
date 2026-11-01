@@ -13,7 +13,7 @@ from hypothesis import strategies as st
 from mtm import store
 from mtm.engines import DuckDBEngine, PandasEngine, ReferenceEngine, assert_results_equal
 from mtm.ingest.synthetic import generate_range
-from mtm.queries import QUERIES
+from mtm.queries import QUERIES, standard_params
 from mtm.schema import TRADE_COLUMNS
 
 ALL_ENGINES = [PandasEngine, DuckDBEngine, ReferenceEngine]
@@ -34,12 +34,22 @@ def _loaded(engine_cls, dataset):
     return e
 
 
-@pytest.mark.parametrize("query_id", sorted(QUERIES))
-@pytest.mark.parametrize("symbol", ["BTCUSDT", "ETHUSDT"])
-def test_engines_agree_with_reference(dataset, query_id, symbol):
-    results = {
-        cls.name: _loaded(cls, dataset).run(query_id, {"symbol": symbol}) for cls in ALL_ENGINES
-    }
+DAY = date(2025, 1, 2)
+CASES = [(qid, standard_params(qid, DAY)) for qid in sorted(QUERIES)] + [
+    ("Q1", {"symbol": "ETHUSDT"}),
+    ("Q2", {"symbol": "ETHUSDT"}),
+    ("Q3", {"symbol": "ETHUSDT"}),
+    ("Q4", {"symbol": "BTCUSDT", "other": "ETHUSDT"}),
+    ("Q5", {**standard_params("Q5", DAY), "symbol": "ETHUSDT", "n": 25}),
+    ("Q5", {"symbol": "BTCUSDT", "n": 5}),  # no time bounds at all
+    ("Q6", {**standard_params("Q6", DAY), "symbol": "ETHUSDT"}),
+    ("Q6", {"symbol": "BTCUSDT", "start": "2025-01-02 03:00:00", "end": "2025-01-03 03:00:00"}),
+]
+
+
+@pytest.mark.parametrize(("query_id", "params"), CASES, ids=lambda v: v if isinstance(v, str) else "")
+def test_engines_agree_with_reference(dataset, query_id, params):
+    results = {cls.name: _loaded(cls, dataset).run(query_id, params) for cls in ALL_ENGINES}
     assert len(results["reference"]) > 0
     assert_results_equal(results["pandas"], results["reference"])
     assert_results_equal(results["duckdb"], results["reference"])

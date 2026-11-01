@@ -6,7 +6,7 @@ import duckdb
 import pandas as pd
 
 from mtm.engines.base import finalize
-from mtm.queries import resolve
+from mtm.queries import resolve, sql_ts
 from mtm.store import DatasetRef
 
 EPOCH = "TIMESTAMP '1970-01-01'"  # pandas floors to the Unix epoch, so DuckDB must too
@@ -55,7 +55,35 @@ class DuckDBEngine:
                 f"WINDOW win AS (ORDER BY bucket ROWS BETWEEN {w - 1} PRECEDING AND CURRENT ROW)) "
                 f"SELECT bucket, sqrt(ss) AS realized_vol FROM w WHERE n = {w} ORDER BY bucket"
             )
+        if query_id == "Q4":
+            other = self._views[p["other"]]
+            return (
+                f"WITH other AS (SELECT ts, last(price ORDER BY trade_id) AS p FROM {other} GROUP BY ts), "
+                f"j AS (SELECT l.ts AS ts, l.price / o.p AS ratio FROM {view} l "
+                "ASOF JOIN other o ON l.ts >= o.ts) "
+                f"SELECT time_bucket(INTERVAL '1 minute', ts, {EPOCH}) AS bucket, "
+                "avg(ratio) AS ratio, count(*) AS trades FROM j GROUP BY 1 ORDER BY 1"
+            )
+        if query_id == "Q5":
+            return (
+                f"SELECT ts AS bucket, trade_id, price, qty FROM {view} "
+                f"WHERE {self._range(p)} ORDER BY qty DESC, ts, trade_id LIMIT {p['n']}"
+            )
+        if query_id == "Q6":
+            return (
+                f"SELECT {sql_ts(p['start'])} AS bucket, count(*) AS trades, "
+                f"coalesce(sum(qty), 0) AS volume FROM {view} WHERE {self._range(p)}"
+            )
         raise NotImplementedError(query_id)
+
+    @staticmethod
+    def _range(p: dict) -> str:
+        parts = []
+        if p.get("start") is not None:
+            parts.append(f"ts >= {sql_ts(p['start'])}")
+        if p.get("end") is not None:
+            parts.append(f"ts < {sql_ts(p['end'])}")
+        return " AND ".join(parts) or "true"
 
     @staticmethod
     def _bars_sql(view: str) -> str:
@@ -68,3 +96,8 @@ class DuckDBEngine:
 
     def run(self, query_id: str, params: dict | None = None) -> pd.DataFrame:
         return finalize(self._con.execute(self.sql(query_id, params)).df(), query_id)
+
+    def explain(self, query_id: str, params: dict | None = None) -> str:
+        """DuckDB's EXPLAIN ANALYZE output for a query, for the Engineer explanation mode."""
+        rows = self._con.execute("EXPLAIN ANALYZE " + self.sql(query_id, params)).fetchall()
+        return "\n".join(str(r[1]) for r in rows)

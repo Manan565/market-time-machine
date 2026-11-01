@@ -5,7 +5,7 @@ The project is a learning and portfolio build around time-series databases: pand
 DuckDB as a modern columnar engine, and (later) Kdb+/Q.
 
 > **Status: week 1 of 5.** Data pipeline, Parquet store, pandas and DuckDB engines for queries
-> Q1 to Q3, and cross-engine parity tests. API, replay UI, Sonify, Day Fingerprint, leaderboard and
+> Q1 to Q6, and cross-engine parity tests. API, replay UI, Sonify, Day Fingerprint, leaderboard and
 > Kdb+/Q come in later weeks. The full plan lives in the project design doc.
 
 ## Quick start
@@ -37,7 +37,7 @@ mtm/
   schema.py          # trade schema shared by every component
   ingest/            # binance parser, quality checks, synthetic generator
   store.py           # partitioned Parquet writer and day summaries
-  queries.py         # named benchmark queries (Q1-Q3 so far)
+  queries.py         # named benchmark queries (Q1-Q6)
   engines/           # Engine protocol, pandas, DuckDB, pure-Python reference
   cli.py             # ingest and demo commands
 tests/               # ingest, generator and engine parity tests
@@ -50,6 +50,9 @@ tests/               # ingest, generator and engine parity tests
 | Q1 | VWAP, volume and trade count per N-minute window |
 | Q2 | 1-minute OHLC bars |
 | Q3 | Rolling 1-hour realized volatility from 1-minute closes |
+| Q4 | As-of join: each ETH trade matched to the latest BTC price at or before it (no look-ahead) |
+| Q5 | The N largest trades in a time range |
+| Q6 | Trade count and volume in a narrow time slice |
 
 ### What `make demo` shows today
 
