@@ -24,19 +24,20 @@ def test_rows_that_do_not_split_evenly_are_rejected(tmp_path):
 
 
 def test_worker_reports_every_query_and_engines_agree(tiny, tmp_path):
-    base, ref = tiny
+    _, ref = tiny
     results_dir = tmp_path / "results"
     runs = {
         name: bench.run_worker(name, ref.root, n_warm=2, results_dir=results_dir)
-        for name in ("pandas", "duckdb")
+        for name in ("pandas", "duckdb", "duckdb-mem")
     }
     for run in runs.values():
         assert set(run["queries"]) == set(QUERIES)
         assert len(run["queries"]["Q1"]["warm_s"]) == 2
         assert run["queries"]["Q1"]["median_s"] > 0
         assert run["peak_rss_mb"] >= run["rss_after_load_mb"] > 0
-    assert "explain" in runs["duckdb"] and "explain" not in runs["pandas"]
-    assert all(bench.check_agreement(results_dir, ["pandas", "duckdb"]).values())
+    assert "explain" in runs["duckdb"] and "explain" in runs["duckdb-mem"]
+    assert "explain" not in runs["pandas"]
+    assert all(bench.check_agreement(results_dir, ["pandas", "duckdb", "duckdb-mem"]).values())
 
 
 def test_machine_info_has_the_fields_the_readme_reports():

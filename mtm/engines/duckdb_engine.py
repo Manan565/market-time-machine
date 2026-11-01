@@ -12,6 +12,11 @@ from mtm.store import DatasetRef
 EPOCH = "TIMESTAMP '1970-01-01'"  # pandas floors to the Unix epoch, so DuckDB must too
 
 
+def _literal(files: list[str]) -> str:
+    """Quote self-generated file paths for inlining (CREATE VIEW/TABLE cannot be prepared)."""
+    return ", ".join("'" + f.replace("'", "''") + "'" for f in files)
+
+
 class DuckDBEngine:
     name = "duckdb"
 
@@ -27,10 +32,8 @@ class DuckDBEngine:
             if not symbol.isalnum():
                 raise ValueError(f"unsafe symbol {symbol!r}")
             view = f"trades_{symbol.lower()}"
-            # CREATE VIEW cannot be prepared, so the (self-generated) paths are quoted inline.
-            literal = ", ".join("'" + f.replace("'", "''") + "'" for f in files)
             self._con.execute(
-                f"CREATE OR REPLACE VIEW {view} AS SELECT * FROM read_parquet([{literal}])"
+                f"CREATE OR REPLACE VIEW {view} AS SELECT * FROM read_parquet([{_literal(files)}])"
             )
             self._views[symbol] = view
 
@@ -101,3 +104,27 @@ class DuckDBEngine:
         """DuckDB's EXPLAIN ANALYZE output for a query, for the Engineer explanation mode."""
         rows = self._con.execute("EXPLAIN ANALYZE " + self.sql(query_id, params)).fetchall()
         return "\n".join(str(r[1]) for r in rows)
+
+
+class DuckDBTableEngine(DuckDBEngine):
+    """DuckDB with the data loaded into its own in-memory, time-sorted table.
+
+    This is the like-for-like counterpart of the pandas engine: both pay a one-off load cost and
+    then query data that already lives in memory. `DuckDBEngine` instead re-reads Parquet on every
+    query, which is a different (and often more convenient) cost model.
+    """
+
+    name = "duckdb-mem"
+
+    def load(self, dataset: DatasetRef, symbols: list[str] | None = None) -> None:
+        self._views = {}
+        for symbol in symbols or dataset.symbols():
+            files = [str(p) for p in dataset.files(symbol)]
+            if not symbol.isalnum():
+                raise ValueError(f"unsafe symbol {symbol!r}")
+            table = f"mem_{symbol.lower()}"
+            self._con.execute(
+                f"CREATE OR REPLACE TABLE {table} AS SELECT ts, trade_id, price, qty "
+                f"FROM read_parquet([{_literal(files)}]) ORDER BY ts, trade_id"
+            )
+            self._views[symbol] = table

@@ -10,10 +10,16 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from mtm import store
-from mtm.engines import DuckDBEngine, PandasEngine, ReferenceEngine, assert_results_equal
+from mtm.engines import (
+    DuckDBEngine,
+    DuckDBTableEngine,
+    PandasEngine,
+    ReferenceEngine,
+    assert_results_equal,
+)
 from mtm.schema import TRADE_COLUMNS
 
-ALL = [PandasEngine, DuckDBEngine, ReferenceEngine]
+ALL = [PandasEngine, DuckDBEngine, DuckDBTableEngine, ReferenceEngine]
 DAY = date(2025, 1, 2)
 T0 = pd.Timestamp("2025-01-02 12:00:00")
 
@@ -171,3 +177,4 @@ def test_random_datasets_agree_for_q4_q5_q6(btc_raw, eth_raw, n, slice_start, sl
             res = _each(ref, query_id, params)
             assert_results_equal(res["pandas"], res["reference"])
             assert_results_equal(res["duckdb"], res["reference"])
+            assert_results_equal(res["duckdb-mem"], res["reference"])

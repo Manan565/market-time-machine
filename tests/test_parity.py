@@ -11,12 +11,18 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from mtm import store
-from mtm.engines import DuckDBEngine, PandasEngine, ReferenceEngine, assert_results_equal
+from mtm.engines import (
+    DuckDBEngine,
+    DuckDBTableEngine,
+    PandasEngine,
+    ReferenceEngine,
+    assert_results_equal,
+)
 from mtm.ingest.synthetic import generate_range
 from mtm.queries import QUERIES, standard_params
 from mtm.schema import TRADE_COLUMNS
 
-ALL_ENGINES = [PandasEngine, DuckDBEngine, ReferenceEngine]
+ALL_ENGINES = [PandasEngine, DuckDBEngine, DuckDBTableEngine, ReferenceEngine]
 
 
 @pytest.fixture(scope="module")
@@ -53,6 +59,7 @@ def test_engines_agree_with_reference(dataset, query_id, params):
     assert len(results["reference"]) > 0
     assert_results_equal(results["pandas"], results["reference"])
     assert_results_equal(results["duckdb"], results["reference"])
+    assert_results_equal(results["duckdb-mem"], results["reference"])
 
 
 @pytest.mark.parametrize("minutes", [1, 3, 5, 7, 15, 60])
@@ -151,6 +158,6 @@ def test_random_small_datasets_agree(raw, minutes):
                 e.run("Q2", {"symbol": "BTCUSDT"}),
                 e.run("Q3", {"symbol": "BTCUSDT", "window": 3}),
             )
-    for name in ("pandas", "duckdb"):
+    for name in ("pandas", "duckdb", "duckdb-mem"):
         for got, want in zip(out[name], out["reference"], strict=True):
             assert_results_equal(got, want)
