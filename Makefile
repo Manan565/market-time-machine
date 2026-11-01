@@ -1,4 +1,4 @@
-.PHONY: install test lint ingest-synth ingest demo
+.PHONY: install test lint ingest-synth ingest demo bench
 
 install:
 	pip install -e ".[dev]"
@@ -20,3 +20,7 @@ ingest:
 # Run Q1-Q3 on every engine and print timings.
 demo:
 	python -m mtm.cli demo --root data/parquet --symbol BTCUSDT
+
+# Rebuild datasets and rerun the full benchmark (about 5 minutes for 1M and 10M rows).
+bench:
+	python -m mtm.bench run --sizes 1000000 10000000 --warm 7 --out bench/results/week2_synthetic.json
