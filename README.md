@@ -4,10 +4,10 @@ Replay a market day tick by tick, query it with several engines, and see which o
 The project is a learning and portfolio build around time-series databases: pandas as the baseline,
 DuckDB as a modern columnar engine, and (later) Kdb+/Q.
 
-> **Status: weeks 1-2 of 5.** Data pipeline, Parquet store, three engines (pandas, DuckDB on
-> Parquet, DuckDB in memory) answering six queries, a pure-Python reference, parity tests, and a
-> benchmark harness with results at 1M and 10M rows. API, replay UI, Sonify, Day Fingerprint,
-> leaderboard and Kdb+/Q come in later weeks.
+> **Status: weeks 1-3 of 5.** Data pipeline, Parquet store, three engines answering six queries,
+> a pure-Python reference, parity tests, a benchmark harness, a FastAPI service with a live replay
+> stream and query race, and a React app on top. Sonify, Day Fingerprint, leaderboard, the
+> explain-it-simply toggle and Kdb+/Q come in later weeks.
 
 ## Quick start
 
@@ -17,7 +17,35 @@ make test           # parity, ingest and generator tests
 make ingest-synth   # write 5 synthetic days of BTCUSDT and ETHUSDT ticks to data/parquet
 make demo           # run all queries on every engine, check agreement, print rough timings
 make bench          # rebuild datasets and rerun the full benchmark (about 2 minutes)
+make web            # build the web app (needs Node 20+)
+make serve          # app and API together at http://127.0.0.1:8000
 ```
+
+## The app
+
+Replay a day tick by tick, scrub anywhere in it, then race the engines on a question about the data.
+
+![The replay: the clock, running price and VWAP, and a scrubber](docs/app-replay.png)
+
+- **Replay.** The server streams about 20 frames a second over a websocket. At 3,000x speed a frame
+  covers 150 simulated seconds. Each frame carries the last price, volume, buy and sell split,
+  largest trade and running VWAP, so the same stream will drive Sonify next week.
+- **Race.** Pick one of the six questions and run it live. Engines run one at a time (a lock keeps
+  concurrent visitors from distorting each other's timings), each gets one discarded warm-up and the
+  median of three timed runs, and results are compared before any winner is named. The lanes take as
+  long as the engines really took.
+- **Recorded results.** The panel also shows the committed benchmark numbers for the same question,
+  clearly labelled as recorded.
+
+![The race, with the verdict, a result preview and the recorded benchmark](docs/app-race.png)
+
+Behind it is a small API (all under `/api`): `GET /days`, `GET /days/{symbol}/{date}/bars`,
+`WS /replay/{symbol}/{date}`, `GET /queries`, `POST /query/run`, `GET /bench/results`. Query
+parameters go through an allow-list with bounds, and the race returns per-engine errors instead of
+failing the whole request. `scripts/e2e_check.py` drives the built page in Chromium (play, pause,
+scrub, race, phone width) and fails on any console error.
+
+For frontend work run `make serve` in one terminal and `make web-dev` in another.
 
 ## About the data
 
@@ -43,8 +71,11 @@ mtm/
   engines/           # Engine protocol, pandas, DuckDB (Parquet and in-memory), reference
   bench.py           # benchmark harness (isolated workers, medians, agreement checks)
   plot.py            # chart and Markdown table from the results file
-  cli.py             # ingest and demo commands
-tests/               # ingest, generator, engine parity and harness tests
+  api/               # replay frames, FastAPI app (websocket replay, query race)
+  cli.py             # ingest, demo and serve commands
+web/                 # React + TypeScript + uPlot app
+scripts/             # browser end-to-end check
+tests/               # ingest, generator, engine parity, harness, replay and API tests
 bench/results/       # committed benchmark results (JSON)
 docs/                # rendered charts
 ```

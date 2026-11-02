@@ -1,7 +1,7 @@
-.PHONY: install test lint ingest-synth ingest demo bench
+.PHONY: install test lint ingest-synth ingest demo bench web serve web-dev
 
 install:
-	pip install -e ".[dev]"
+	pip install -e ".[dev,api,plot]"
 
 test:
 	python -m pytest -q
@@ -24,3 +24,14 @@ demo:
 # Rebuild datasets and rerun the full benchmark (about 5 minutes for 1M and 10M rows).
 bench:
 	python -m mtm.bench run --sizes 1000000 10000000 --warm 7 --out bench/results/week2_synthetic.json
+
+# Build the web app once, then serve it and the API together on http://127.0.0.1:8000
+web:
+	cd web && npm ci && npm run build
+
+serve:
+	python -m mtm.cli serve --root data/parquet --port 8000
+
+# Hot-reloading frontend on :5173; run `make serve` in another terminal for the API.
+web-dev:
+	cd web && npm run dev
