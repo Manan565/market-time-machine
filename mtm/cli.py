@@ -80,6 +80,16 @@ def cmd_demo(args: argparse.Namespace) -> None:
         print(f"{qid} {query.title:<36} rows={len(results[names[0]]):>6,}  {cells}  agree=yes")
 
 
+def cmd_serve(args: argparse.Namespace) -> None:
+    import uvicorn
+
+    from mtm.api.app import create_app
+
+    results = Path(args.results) if args.results else None
+    app = create_app(Path(args.root), results, Path(args.web) if args.web else None)
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="mtm")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -106,6 +116,14 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--root", default="data/parquet")
     d.add_argument("--symbol", default="BTCUSDT")
     d.set_defaults(func=cmd_demo)
+
+    v = sub.add_parser("serve", help="start the API (and the built web app if present)")
+    v.add_argument("--root", default="data/parquet")
+    v.add_argument("--results", default="bench/results/week2_synthetic.json")
+    v.add_argument("--web", default="web/dist")
+    v.add_argument("--host", default="127.0.0.1")
+    v.add_argument("--port", type=int, default=8000)
+    v.set_defaults(func=cmd_serve)
     return parser
 
 
