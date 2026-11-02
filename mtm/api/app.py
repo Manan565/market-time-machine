@@ -283,7 +283,10 @@ def create_app(data_root: Path, bench_results: Path | None = None, web_dist: Pat
             "agree": not disagreements and len(ok) > 1,
             "disagreements": disagreements,
             "winner": min(timed, key=lambda r: r["median_ms"])["engine"] if timed else None,
-            "method": f"median of up to {repeats} warm runs, one warm-up discarded, run one engine at a time",
+            "method": (
+                f"Median of up to {repeats} warm runs, with one warm-up run discarded "
+                "and one engine running at a time"
+            ),
         }
 
     @app.post("/api/query/run")
